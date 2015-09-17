@@ -79,6 +79,9 @@ Class WPOA {
 			),
 		'wpoa_suppress_welcome_email' => 0,								// 0, 1
 		'wpoa_new_user_role' => 'contributor',							// role
+		'wpoa_scalebridge_api_enabled' => 0,							// 0, 1
+		'wpoa_scalebridge_api_id' => '',								// any string
+		'wpoa_scalebridge_api_secret' => '',							// any string
 		'wpoa_google_api_enabled' => 0,									// 0, 1
 		'wpoa_google_api_id' => '',										// any string
 		'wpoa_google_api_secret' => '',									// any string
@@ -394,33 +397,63 @@ Class WPOA {
 	function wpoa_login_user($oauth_identity) {
 		// store the user info in the user session so we can grab it later if we need to register the user:
 		$_SESSION["WPOA"]["USER_ID"] = $oauth_identity["id"];
+
+//		var_error_log($oauth_identity);
+
+//		error_log('in_array("username", $oauth_identity): ' . in_array("username", $oauth_identity));
+//		error_log('array_key_exists("username", $oauth_identity): ' . array_key_exists("username", $oauth_identity));
+
+		if (array_key_exists("username", $oauth_identity)) {
+//			error_log('USERNAME SPECIFIED!!!');
+			$_SESSION["WPOA"]["USERNAME"] = $oauth_identity["username"];
+		}
+		else {
+//			error_log('username NOT specified!!!');
+		}
+
+//		var_error_log($_SESSION["WPOA"]);
 		// try to find a matching wordpress user for the now-authenticated user's oauth identity:
 		$matched_user = $this->wpoa_match_wordpress_user($oauth_identity);
 		// handle the matched user if there is one:
 		if ( $matched_user ) {
+//			error_log('MATCHED USER!');
+//			var_error_log($matched_user);
 			// there was a matching wordpress user account, log it in now:
 			$user_id = $matched_user->ID;
 			$user_login = $matched_user->user_login;
 			wp_set_current_user( $user_id, $user_login );
 			wp_set_auth_cookie( $user_id );
 			do_action( 'wp_login', $user_login, $matched_user );
+
+			sync_user_permissions();
+
 			// after login, redirect to the user's last location
 			$this->wpoa_end_login("Logged in successfully!");
 		}
 		// handle the already logged in user if there is one:
 		if ( is_user_logged_in() ) {
+//			error_log('USER LOGGED IN!!!');
+
 			// there was a wordpress user logged in, but it is not associated with the now-authenticated user's email address, so associate it now:
 			global $current_user;
 			get_currentuserinfo();
 			$user_id = $current_user->ID;
 			$this->wpoa_link_account($user_id);
+
+			sync_user_permissions();
+
 			// after linking the account, redirect user to their last url
 			$this->wpoa_end_login("Your account was linked successfully with your third party authentication provider.");
 		}
 		// handle the logged out user or no matching user (register the user):
 		if ( !is_user_logged_in() && !$matched_user ) {
+//			error_log('REGISTERING USER!!!');
 			// this person is not logged into a wordpress account and has no third party authentications registered, so proceed to register the wordpress user:
 			include 'register.php';
+
+			sync_user_permissions();
+//			error_log('REGISTERED USER!!!');
+
 		}
 		// we shouldn't be here, but just in case...
 		$this->wpoa_end_login("Sorry, we couldn't log you in. The login flow terminated in an unexpected way. Please notify the admin or try again later.");
@@ -701,6 +734,7 @@ Class WPOA {
 		// generate the login buttons for available providers:
 		// TODO: don't hard-code the buttons/providers here, we want to be able to add more providers without having to update this function...
 		$html = "";
+		$html .= $this->wpoa_login_button("scalebridge", "Scalebridge", $atts);
 		$html .= $this->wpoa_login_button("google", "Google", $atts);
 		$html .= $this->wpoa_login_button("facebook", "Facebook", $atts);
 		$html .= $this->wpoa_login_button("linkedin", "LinkedIn", $atts);
